@@ -14,7 +14,7 @@ class BaseStorage:
                 data.update(state)
                 outfile.seek(0)
                 json.dump(data, outfile)
-            except:
+            except ValueError:
                 json.dump(state, outfile)
 
     @abc.abstractmethod

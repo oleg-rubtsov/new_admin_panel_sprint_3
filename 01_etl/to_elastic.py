@@ -1,16 +1,12 @@
-import os
-
-from dotenv import load_dotenv
 from elasticsearch import Elasticsearch
+from settings import Settings
 
-load_dotenv()
 
-ES_PORT = int(os.environ.get('es_port'))
-ES_HOST = os.environ.get('es_host')
-INDEX_NAME = os.environ.get('index_name')
+settings = Settings()
+
 
 es_client = Elasticsearch('http://{host}:{port}'.format(
-    host=ES_HOST, port=ES_PORT)
+    host=settings.es_host, port=settings.es_port)
 )
 
 
@@ -41,4 +37,4 @@ def upload_to_elastic(data: dict):
         index = {"index": {"_index": "movies", "_id": item}}
         actions.append(index)
         actions.append(dat)
-    es_client.bulk(index=INDEX_NAME, operations=actions)
+    es_client.bulk(index=settings.index_name, operations=actions)

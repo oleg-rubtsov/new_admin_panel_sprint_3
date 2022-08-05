@@ -1,14 +1,13 @@
 import psycopg2
-from dotenv import load_dotenv
 from psycopg2.extensions import connection as _connection
 
 from condition import JsonFileStorage, State
+from settings import Settings
 from to_elastic import upload_to_elastic
 
-load_dotenv()
+settings = Settings()
 
-
-def data_grouping(data: dict):
+def data_grouping(data: dict) -> dict:
     tmp = {}
     for item in data:
         fw_id, title, description, rating, type, created_at, \
@@ -28,7 +27,7 @@ def data_grouping(data: dict):
     return tmp
 
 
-def sql_query_for_movies(id_films: dict):
+def sql_query_for_movies(id_films: dict) -> str:
     return "SELECT \
                 fw.id as fw_id, \
                 fw.title, \
@@ -50,7 +49,7 @@ def sql_query_for_movies(id_films: dict):
             WHERE fw.id IN {id_films};".format(id_films=tuple(id_films))
 
 
-def sql_query_for_related_data(table: str, content_id: str, base_id: dict):
+def sql_query_for_related_data(table: str, content_id: str, base_id: dict) -> str:
     return "SELECT fw.id, fw.updated_at \
             FROM content.film_work fw \
             LEFT JOIN content.{table} dfw ON dfw.film_work_id = fw.id \
@@ -61,7 +60,7 @@ def sql_query_for_related_data(table: str, content_id: str, base_id: dict):
             )
 
 
-def sql_query_for_content(table: str, last_updated: int):
+def sql_query_for_content(table: str, last_updated: int) -> str:
     return "SELECT id, updated_at FROM \
            content.{table} WHERE updated_at > '{last_updated}' \
            ORDER BY updated_at LIMIT 100;".format(
@@ -71,11 +70,11 @@ def sql_query_for_content(table: str, last_updated: int):
 
 def loading(
     curs_postgres: psycopg2.extensions.cursor,
-    state: State, INITIAL_DATE: str, data_items: dict
-):
+    state: State, initial_date: str, data_items: dict
+) -> None:
     while True:
         state_info = state.get_state(data_items['state_name'])
-        last_updated = state_info if state_info else INITIAL_DATE
+        last_updated = state_info if state_info else initial_date
         curs_postgres.execute(
             sql_query_for_content(data_items['table'], last_updated)
         )
@@ -102,12 +101,12 @@ def loading(
             break
 
 
-def load_from_postgres(pg_conn: _connection, INITIAL_DATE: str):
-    storage = JsonFileStorage('condition_file.txt')
+def load_from_postgres(pg_conn: _connection, initial_date: str) -> None:
+    storage = JsonFileStorage(settings.condition_file)
     state = State(storage)
     curs_postgres = pg_conn.cursor()
     loading(
-        curs_postgres, state, INITIAL_DATE,
+        curs_postgres, state, initial_date,
         {
             'table': 'person',
             'related_table': 'person_film_work',
@@ -116,7 +115,7 @@ def load_from_postgres(pg_conn: _connection, INITIAL_DATE: str):
         }
     )
     loading(
-        curs_postgres, state, INITIAL_DATE,
+        curs_postgres, state, initial_date,
         {
             'table': 'genre',
             'related_table': 'genre_film_work',
@@ -125,7 +124,7 @@ def load_from_postgres(pg_conn: _connection, INITIAL_DATE: str):
         }
     )
     loading(
-        curs_postgres, state, INITIAL_DATE,
+        curs_postgres, state, initial_date,
         {
             'table': 'film_work',
             'state_name': 'film_updated_at'

@@ -1,31 +1,40 @@
 import logging
-import os
+import sys
 import time
+import typing
 from functools import wraps
 
 import psycopg2
-from dotenv import load_dotenv
 from psycopg2.extras import DictCursor
 
 from load_from_postgres import load_from_postgres
+from settings import Settings
 
-load_dotenv()
+settings = Settings()
 
-logger = logging.getLogger(__name__)
-
-INITIAL_DATE = str(os.environ.get('initial_date', default='2021-01-01'))
+backoff_logger = logging.getLogger(__name__)
 
 
-def backoff(Exception, start_sleep_time=0.1, factor=2, border_sleep_time=10):
+def backoff(
+    exception: Exception,
+    backoff_logger: logging.Logger = logging.getLogger(__name__),
+    start_sleep_time: float = settings.start_sleep_time,
+    factor: int = settings.factor,
+    border_sleep_time: int = settings.border_sleep_time,
+    max_attemts: int = settings.max_attemts
+) -> typing.Callable:
     def func_wrapper(func):
         @wraps(func)
         def inner(*args, **kwargs):
-            sleep_time = start_sleep_time
+            sleep_time, attemts = start_sleep_time, max_attemts
             while True:
+                if attemts == 0:
+                    sys.exit(0)
                 try:
                     return func(*args, **kwargs)
-                except Exception as ex:
-                    logger.warning(f"{ex}")
+                except exception as ex:
+                    attemts -= 1
+                    backoff_logger.warning("Unexpected error occured.", exc_info=ex)
                     time.sleep(sleep_time)
                     if sleep_time < border_sleep_time:
                         sleep_time *= 2 ** factor
@@ -35,18 +44,20 @@ def backoff(Exception, start_sleep_time=0.1, factor=2, border_sleep_time=10):
     return func_wrapper
 
 
-@backoff(Exception)
+@backoff(Exception, backoff_logger)
 def psycopg2_connection():
     dsl = {
-        'dbname': os.environ.get('dbname', default=None),
-        'user': os.environ.get('user', default=None),
-        'password': os.environ.get('password', default=None),
-        'host': os.environ.get('host', default=None),
-        'port': os.environ.get('port', default=None)
+        'dbname': settings.dbname,
+        'user': settings.user,
+        'password': settings.password,
+        'host': settings.host,
+        'port': settings.port
     }
     with psycopg2.connect(**dsl, cursor_factory=DictCursor) as pg_conn:
         return pg_conn
 
 
 if __name__ == '__main__':
-    load_from_postgres(psycopg2_connection(), INITIAL_DATE)
+    while True:
+        load_from_postgres(psycopg2_connection(), settings.initial_date)
+        time.sleep(settings.delay)
